@@ -5,3 +5,4 @@ __pycache__/
 *.pyd
 *.log
 .env
+openenv_my_env.egg-info/
