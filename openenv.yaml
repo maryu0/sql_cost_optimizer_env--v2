@@ -1,0 +1,58 @@
+spec_version: 1
+name: my_env
+type: space
+runtime: fastapi
+app: server.app:app
+port: 8000
+
+description: SQL Cost Optimizer environment with deterministic grading.
+repository: https://github.com/maryu0/sql_cost_optimizer_env--v2.git
+
+tasks:
+	- name: index-advisor
+		description: Suggest CREATE INDEX statements for slow SQL queries.
+		difficulty: easy
+		weight: 0.70
+		score: 0.70
+		grader:
+			name: index-advisor-grader
+			type: deterministic
+			config:
+				criteria:
+					- Identifies correct index columns
+					- Improves latency by at least 1.5x
+					- Avoids over-indexing
+
+	- name: query-rewriter
+		description: Rewrite inefficient SQL into equivalent, faster JOIN-based SQL.
+		difficulty: medium
+		weight: 0.75
+		score: 0.75
+		grader:
+			name: query-rewriter-grader
+			type: deterministic
+			config:
+				criteria:
+					- Preserves result correctness
+					- Uses JOINs and proper aggregation
+					- Improves latency by at least 2x
+
+	- name: schema-normalizer
+		description: Normalize denormalized schema with safe migration SQL.
+		difficulty: hard
+		weight: 0.80
+		score: 0.80
+		grader:
+			name: schema-normalizer-grader
+			type: deterministic
+			config:
+				criteria:
+					- Creates normalized dimension tables
+					- Adds foreign keys and migration SQL
+					- Maintains referential integrity
+
+environment:
+	reward_range:
+		min: 0.01
+		max: 0.99
+
