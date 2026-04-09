@@ -1,15 +1,14 @@
-"""
-Baseline inference script for SQL Cost Optimizer Environment.
-Demonstrates agent interaction and reproduces baseline scores.
+"""Baseline inference script for the SQL Cost Optimizer environment.
 
-REQUIRED: Must be in ROOT DIRECTORY and use OpenAI client.
-Runtime: < 20 minutes
+This script must live at repo root and use the OpenAI client with
+environment-provided credentials.
 """
 import sys
 import os
 import time
 import logging
 import json
+import textwrap
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -43,32 +42,18 @@ except ImportError as e:
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI-compatible client (REQUIRED by hackathon rules)
-# Use validator-provided credentials with sensible defaults
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-API_KEY = os.getenv(
-    "HF_TOKEN",
-    os.getenv("API_KEY", os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY") or "sk-test-dummy-key-for-validation")
-)
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
+HF_TOKEN = os.getenv("HF_TOKEN")
+
+
+def _require_hf_token() -> str:
+    if not HF_TOKEN:
+        raise RuntimeError("HF_TOKEN is required")
+    return HF_TOKEN
+
 
 logger.info(f"Using API endpoint: {API_BASE_URL}")
-
-api_base_url = API_BASE_URL
-api_key = API_KEY
-
-
-try:
-    client = OpenAI(
-        base_url=api_base_url,
-        api_key=api_key
-    )
-    logger.info(f"OpenAI client initialized with: {api_base_url}")
-except Exception as e:
-    logger.warning(f"OpenAI client init warning: {e}")
-    client = None
-
-# Use appropriate model
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
 
 TASK_NAMES = ["index-advisor", "query-rewriter", "schema-normalizer"]
 
@@ -82,51 +67,31 @@ def _clamp_strict_score(value: float) -> float:
     return float(value)
 
 
-def _print_validator_json(task_scores: dict[str, dict]) -> None:
-    """Build validator-friendly JSON payload with exactly 3 tasks."""
-
-    results = {"tasks": []}
-    for task_name in TASK_NAMES:
-        score_entry = task_scores.get(task_name, {})
-        grade_score = _clamp_strict_score(float(score_entry.get("grade", 0.01)))
-        feedback = str(score_entry.get("feedback", "Fallback score emitted by inference guardrail"))
-        results["tasks"].append({
-            "name": task_name,
-            "grader": {
-                "score": grade_score,
-                "feedback": feedback
-            }
-        })
-
-    return results
+def _compact(text: str) -> str:
+    return " ".join(str(text).split())
 
 
-def _emit_start() -> None:
-    """Emit start marker and structured context payload."""
-    payload = {
-        "model": MODEL_NAME,
-        "api_base_url": API_BASE_URL,
-        "tasks": TASK_NAMES,
-    }
-    print("[START]")
-    print(json.dumps(payload, separators=(",", ":")))
+def _emit_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def _emit_step(payload: dict) -> None:
-    """Emit per-task structured step payload."""
-    print("[STEP]")
-    print(json.dumps(payload, separators=(",", ":")))
+def _emit_step(step: int, action: str, reward: float, done: bool, error: str | None) -> None:
+    error_val = error if error else "null"
+    print(
+        f"[STEP] step={step} action={_compact(action)} reward={reward:.2f} done={str(done).lower()} error={error_val}",
+        flush=True,
+    )
 
 
-def _emit_end(task_scores: dict[str, dict], runtime_seconds: float) -> None:
-    """Emit end marker and final validator payload."""
-    payload = _print_validator_json(task_scores)
-    payload["runtime_seconds"] = round(runtime_seconds, 3)
-    print("[END]")
-    print(json.dumps(payload, separators=(",", ":")))
+def _emit_end(success: bool, steps: int, score: float, rewards: list[float]) -> None:
+    rewards_str = ",".join(f"{_clamp_strict_score(r):.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} score={_clamp_strict_score(score):.2f} rewards={rewards_str}",
+        flush=True,
+    )
 
 
-def generate_optimization_action(observation: dict, task_type: str) -> Action:
+def generate_optimization_action(client: OpenAI, observation: dict, task_type: str) -> Action:
     """
     Generate optimization action using LLM.
     
@@ -179,10 +144,6 @@ Be concise and focused on the optimization.
 """
 
     try:
-        # Check if client is available
-        if client is None:
-            raise RuntimeError("OpenAI client not initialized")
-
         # Call LLM (REQUIRED: Use OpenAI client)
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -223,91 +184,68 @@ Be concise and focused on the optimization.
         )
 
 
-def run_baseline_inference():
-    """
-    Run baseline inference on all tasks.
-    """
-    _emit_start()
+def run_baseline_inference() -> dict[str, dict]:
+    """Run one reproducible episode per task and emit strict stdout."""
 
-    # Initialize environment
-    env = SQLOptimizerEnv()
+    _require_hf_token()
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+    benchmark = os.getenv("BENCHMARK_NAME", "sql-cost-optimizer")
+    results: dict[str, dict] = {}
 
-    # Tasks to evaluate
-    tasks = TASK_NAMES
+    for task_name in TASK_NAMES:
+        rewards: list[float] = []
+        steps_taken = 0
+        task_score = 0.0
+        success = False
+        error_message: str | None = None
+        elapsed_time = 0.0
+        env = SQLOptimizerEnv()
 
-    # Pre-populate strict in-range fallback scores for all tasks
-    all_scores = {
-        task_name: {
-            "reward": -1.0,
-            "grade": 0.01,
-            "speedup": 0.0,
-            "feedback": "Fallback score emitted by inference guardrail"
-        }
-        for task_name in tasks
-    }
-    start_time = time.time()
+        _emit_start(task_name, benchmark, MODEL_NAME)
 
-    for task_name in tasks:
+        start_time = time.time()
         try:
-            # Reset environment
             obs = env.reset(task_name=task_name, seed=42)
             obs_dict = obs.model_dump()
-
-            # Generate action using LLM
-            action = generate_optimization_action(obs_dict, task_name)
-
-            # Execute action
+            action = generate_optimization_action(client, obs_dict, task_name)
             obs, reward, done, info = env.step(action)
 
-            # Store score
-            grade_score = _clamp_strict_score(float(info.get('grade_score', 0.01)))
-            all_scores[task_name] = {
-                "reward": reward.score,
-                "grade": grade_score,
-                "speedup": info.get('optimized_time_ms', 0.0),
-                "feedback": reward.feedback
-            }
-            speedup = (
-                info.get('baseline_time_ms', 1.0) / info.get('optimized_time_ms', 1.0)
-                if info.get('optimized_time_ms', 0.0) > 0 else 1.0
+            steps_taken = 1
+            reward_value = _clamp_strict_score(float(reward.score))
+            rewards.append(reward_value)
+            task_score = _clamp_strict_score(float(info.get("grade_score", reward_value)))
+            success = bool(done) or task_score >= 0.1
+
+            _emit_step(
+                step=1,
+                action=action.optimized_query,
+                reward=reward_value,
+                done=bool(done),
+                error=None,
             )
-            _emit_step({
-                "task": task_name,
-                "status": "ok",
-                "grader": {
-                    "score": grade_score,
-                    "feedback": reward.feedback
-                },
-                "reward": _clamp_strict_score(float(reward.score)),
-                "speedup": round(float(speedup), 4),
-                "done": bool(done)
-            })
+        except Exception as exc:
+            error_message = str(exc)
+            rewards.append(0.01)
+            task_score = 0.01
+            _emit_step(step=1, action="fallback", reward=0.01, done=True, error=error_message)
+        finally:
+            try:
+                env.close()
+            except Exception as exc:
+                error_message = error_message or str(exc)
 
-        except Exception as e:
-            all_scores[task_name] = {
-                "reward": 0.01,
-                "grade": 0.01,  # Must be strictly between 0 and 1, not exactly 0.0
-                "speedup": 0.0,
-                "feedback": f"Error: {str(e)}"
-            }
-            _emit_step({
-                "task": task_name,
-                "status": "error",
-                "grader": {
-                    "score": 0.01,
-                    "feedback": f"Error: {str(e)}"
-                },
-                "reward": 0.01,
-                "speedup": 0.0,
-                "done": True
-            })
+            elapsed_time = time.time() - start_time
+            _emit_end(success=success, steps=steps_taken or 1, score=task_score, rewards=rewards)
 
-    # Cleanup
-    env.close()
+        results[task_name] = {
+            "score": task_score,
+            "rewards": rewards,
+            "success": success,
+            "error": error_message,
+            "elapsed_time_seconds": round(elapsed_time, 3),
+        }
 
-    elapsed_time = time.time() - start_time
-    _emit_end(all_scores, elapsed_time)
-    return all_scores
+    return results
 
 
 if __name__ == "__main__":
@@ -316,18 +254,13 @@ if __name__ == "__main__":
         logger.info("Starting SQL Cost Optimizer inference...")
         logger.info("=" * 80)
 
-        # Check environment variables (optional for validation)
-        if not os.getenv("HF_TOKEN") and not os.getenv("OPENAI_API_KEY") and not os.getenv("GROQ_API_KEY"):
-            logger.warning("No HF_TOKEN/API key found. Using fallback key for validation.")
-
         # Run inference
         try:
             scores = run_baseline_inference()
             logger.info("Inference completed successfully")
         except Exception as e:
             logger.error(f"Inference error: {str(e)}", exc_info=True)
-            _emit_start()
-            _emit_end({}, 0.0)
+            print(f"[ERROR] {str(e)}", flush=True)
             # Exit 0 even on error to avoid validator failure
             sys.exit(0)
 

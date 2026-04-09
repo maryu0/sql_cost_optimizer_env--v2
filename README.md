@@ -8,247 +8,78 @@ pinned: false
 app_port: 8000
 tags:
   - openenv
-    - sql
-    - fastapi
+  - sql
+  - fastapi
 ---
 
 # SQL Cost Optimizer Environment
 
-OpenEnv-compatible SQL optimization environment with three graded tasks:
-- index-advisor
-- query-rewriter
-- schema-normalizer
+This repository provides an OpenEnv-compatible SQL optimization benchmark with three tasks:
+- `index-advisor`
+- `query-rewriter`
+- `schema-normalizer`
 
-The environment exposes reset/step/state/health endpoints and includes baseline inference output in strict validator format.
+The environment simulates a real task people actually do: improving SQL performance and schema quality while preserving correctness.
+
+## Environment Description
+
+Agents receive a slow SQL query, schema, sample data, and an EXPLAIN plan. They must propose an optimization action such as an index, rewritten SQL, or normalized schema migration.
+
+## Action Space
+
+`MyAction` includes:
+- `optimized_query`: SQL or DDL to execute
+- `explanation`: short rationale
+- `suggested_changes`: list of changes made
+- `confidence`: float in `[0.0, 1.0]`
+- `metadata`: extra fields
+
+## Observation Space
+
+`MyObservation` includes:
+- `task_type`
+- `query`
+- `database_schema`
+- `current_execution_time_ms`
+- `explain_plan`
+- `sample_data_preview`
+- `hint`
+- `metadata`
+
+## Setup
+
+Install dependencies and run validation:
+
+```bash
+uv sync
+openenv validate
+python inference.py
+```
 
 ## Required Environment Variables
 
-Before submission or deployment, define all of these variables:
-- API_BASE_URL: LLM endpoint URL
-- MODEL_NAME: model identifier used by inference
-- HF_TOKEN: Hugging Face/API token
+Set these in your Hugging Face Space or local environment:
+- `API_BASE_URL`
+- `MODEL_NAME`
+- `HF_TOKEN`
 
-Use .env.example as a template and configure the same keys in Hugging Face Space Variables/Secrets.
+## Demo Script
 
-## Quick Start
-
-The simplest way to use the My Env environment is through the `MyEnv` class:
-
-```python
-from my_env import MyAction, MyEnv
-
-try:
-    # Create environment from Docker image
-    my_envenv = MyEnv.from_docker_image("my_env-env:latest")
-
-    # Reset
-    result = my_envenv.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-
-    # Send multiple messages
-    messages = ["Hello, World!", "Testing echo", "Final message"]
-
-    for msg in messages:
-        result = my_envenv.step(MyAction(message=msg))
-        print(f"Sent: '{msg}'")
-        print(f"  → Echoed: '{result.observation.echoed_message}'")
-        print(f"  → Length: {result.observation.message_length}")
-        print(f"  → Reward: {result.reward}")
-
-finally:
-    # Always clean up
-    my_envenv.close()
-```
-
-That's it! The `MyEnv.from_docker_image()` method handles:
-- Starting the Docker container
-- Waiting for the server to be ready
-- Connecting to the environment
-- Container cleanup when you call `close()`
-
-## Building the Docker Image
-
-Before using the environment, you need to build the Docker image:
+Run the demo script to exercise one environment step:
 
 ```bash
-# From project root
-docker build -t my_env-env:latest -f server/Dockerfile .
+python demo.py
 ```
 
-## Deploying to Hugging Face Spaces
+## Docker and Deployment
 
-You can easily deploy your OpenEnv environment to Hugging Face Spaces using the `openenv push` command:
+Build locally:
 
 ```bash
-# From the environment directory (where openenv.yaml is located)
-openenv push
-
-# Or specify options
-openenv push --namespace my-org --private
+docker build -f Dockerfile -t sql-cost-optimizer-env-v2 .
 ```
 
-The `openenv push` command will:
-1. Validate that the directory is an OpenEnv environment (checks for `openenv.yaml`)
-2. Prepare a custom build for Hugging Face Docker space (enables web interface)
-3. Upload to Hugging Face (ensuring you're logged in)
-
-### Prerequisites
-
-- Authenticate with Hugging Face: The command will prompt for login if not already authenticated
-
-### Options
-
-- `--directory`, `-d`: Directory containing the OpenEnv environment (defaults to current directory)
-- `--repo-id`, `-r`: Repository ID in format 'username/repo-name' (defaults to 'username/env-name' from openenv.yaml)
-- `--base-image`, `-b`: Base Docker image to use (overrides Dockerfile FROM)
-- `--private`: Deploy the space as private (default: public)
-
-### Examples
-
-```bash
-# Push to your personal namespace (defaults to username/env-name from openenv.yaml)
-openenv push
-
-# Push to a specific repository
-openenv push --repo-id my-org/my-env
-
-# Push with a custom base image
-openenv push --base-image ghcr.io/meta-pytorch/openenv-base:latest
-
-# Push as a private space
-openenv push --private
-
-# Combine options
-openenv push --repo-id my-org/my-env --base-image custom-base:latest --private
-```
-
-After deployment, your space will be available at:
-`https://huggingface.co/spaces/<repo-id>`
-
-The deployed space includes:
-- **Web Interface** at `/web` - Interactive UI for exploring the environment
-- **API Documentation** at `/docs` - Full OpenAPI/Swagger interface
-- **Health Check** at `/health` - Container health monitoring
-- **WebSocket** at `/ws` - Persistent session endpoint for low-latency interactions
-
-## Environment Details
-
-### Action
-**MyAction**: Contains a single field
-- `message` (str) - The message to echo back
-
-### Observation
-**MyObservation**: Contains the echo response and metadata
-- `echoed_message` (str) - The message echoed back
-- `message_length` (int) - Length of the message
-- `reward` (float) - Reward based on message length (length × 0.1)
-- `done` (bool) - Always False for echo environment
-- `metadata` (dict) - Additional info like step count
-
-### Reward
-The reward is calculated as: `message_length × 0.1`
-- "Hi" → reward: 0.2
-- "Hello, World!" → reward: 1.3
-- Empty message → reward: 0.0
-
-## Advanced Usage
-
-### Connecting to an Existing Server
-
-If you already have a My Env environment server running, you can connect directly:
-
-```python
-from my_env import MyEnv
-
-# Connect to existing server
-my_envenv = MyEnv(base_url="<ENV_HTTP_URL_HERE>")
-
-# Use as normal
-result = my_envenv.reset()
-result = my_envenv.step(MyAction(message="Hello!"))
-```
-
-Note: When connecting to an existing server, `my_envenv.close()` will NOT stop the server.
-
-### Using the Context Manager
-
-The client supports context manager usage for automatic connection management:
-
-```python
-from my_env import MyAction, MyEnv
-
-# Connect with context manager (auto-connects and closes)
-with MyEnv(base_url="http://localhost:8000") as env:
-    result = env.reset()
-    print(f"Reset: {result.observation.echoed_message}")
-    # Multiple steps with low latency
-    for msg in ["Hello", "World", "!"]:
-        result = env.step(MyAction(message=msg))
-        print(f"Echoed: {result.observation.echoed_message}")
-```
-
-The client uses WebSocket connections for:
-- **Lower latency**: No HTTP connection overhead per request
-- **Persistent session**: Server maintains your environment state
-- **Efficient for episodes**: Better for many sequential steps
-
-### Concurrent WebSocket Sessions
-
-The server supports multiple concurrent WebSocket connections. To enable this,
-modify `server/app.py` to use factory mode:
-
-```python
-# In server/app.py - use factory mode for concurrent sessions
-app = create_app(
-    MyEnvironment,  # Pass class, not instance
-    MyAction,
-    MyObservation,
-    max_concurrent_envs=4,  # Allow 4 concurrent sessions
-)
-```
-
-Then multiple clients can connect simultaneously:
-
-```python
-from my_env import MyAction, MyEnv
-from concurrent.futures import ThreadPoolExecutor
-
-def run_episode(client_id: int):
-    with MyEnv(base_url="http://localhost:8000") as env:
-        result = env.reset()
-        for i in range(10):
-            result = env.step(MyAction(message=f"Client {client_id}, step {i}"))
-        return client_id, result.observation.message_length
-
-# Run 4 episodes concurrently
-with ThreadPoolExecutor(max_workers=4) as executor:
-    results = list(executor.map(run_episode, range(4)))
-```
-
-## Development & Testing
-
-### Direct Environment Testing
-
-Test the environment logic directly without starting the HTTP server:
-
-```bash
-# From the server directory
-python3 server/my_env_environment.py
-```
-
-This verifies that:
-- Environment resets correctly
-- Step executes actions properly
-- State tracking works
-- Rewards are calculated correctly
-
-### Running Locally
-
-Run the server locally for development:
-
-```bash
-uvicorn server.app:app --reload
-```
+Deploy to Hugging Face Spaces by pushing the repo root with `Dockerfile`, `openenv.yaml`, `inference.py`, `requirements.txt`, and `README.md` present.
 
 ## Project Structure
 
