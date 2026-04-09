@@ -1,19 +1,34 @@
 ---
-title: My Env Environment Server
-emoji: 🎯
-colorFrom: gray
+title: SQL Cost Optimizer Env v2
+emoji: 🚀
+colorFrom: blue
 colorTo: green
 sdk: docker
 pinned: false
 app_port: 8000
-base_path: /web
 tags:
   - openenv
+    - sql
+    - fastapi
 ---
 
-# My Env Environment
+# SQL Cost Optimizer Environment
 
-A simple test environment that echoes back messages. Perfect for testing the env APIs as well as demonstrating environment usage patterns.
+OpenEnv-compatible SQL optimization environment with three graded tasks:
+- index-advisor
+- query-rewriter
+- schema-normalizer
+
+The environment exposes reset/step/state/health endpoints and includes baseline inference output in strict validator format.
+
+## Required Environment Variables
+
+Before submission or deployment, define all of these variables:
+- API_BASE_URL: LLM endpoint URL
+- MODEL_NAME: model identifier used by inference
+- HF_TOKEN: Hugging Face/API token
+
+Use .env.example as a template and configure the same keys in Hugging Face Space Variables/Secrets.
 
 ## Quick Start
 
