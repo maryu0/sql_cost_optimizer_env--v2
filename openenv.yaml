@@ -16,6 +16,7 @@ tasks:
 		score: 0.70
 		grader:
 			name: index-advisor-grader
+			score: 0.70
 			type: deterministic
 			config:
 				criteria:
@@ -30,6 +31,7 @@ tasks:
 		score: 0.75
 		grader:
 			name: query-rewriter-grader
+			score: 0.75
 			type: deterministic
 			config:
 				criteria:
@@ -44,6 +46,7 @@ tasks:
 		score: 0.80
 		grader:
 			name: schema-normalizer-grader
+			score: 0.80
 			type: deterministic
 			config:
 				criteria:
