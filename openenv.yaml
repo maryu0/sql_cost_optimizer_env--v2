@@ -18,6 +18,10 @@ tasks:
       name: index-advisor-grader
       score: 0.70
       type: deterministic
+      criteria:
+        - Identifies correct index columns
+        - Improves latency by at least 1.5x
+        - Avoids over-indexing
       config:
         criteria:
           - Identifies correct index columns
@@ -33,6 +37,10 @@ tasks:
       name: query-rewriter-grader
       score: 0.75
       type: deterministic
+      criteria:
+        - Preserves result correctness
+        - Uses JOINs and proper aggregation
+        - Improves latency by at least 2x
       config:
         criteria:
           - Preserves result correctness
@@ -48,6 +56,10 @@ tasks:
       name: schema-normalizer-grader
       score: 0.80
       type: deterministic
+      criteria:
+        - Creates normalized dimension tables
+        - Adds foreign keys and migration SQL
+        - Maintains referential integrity
       config:
         criteria:
           - Creates normalized dimension tables
